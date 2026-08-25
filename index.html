@@ -1069,25 +1069,18 @@
     <div class="auth-msg" id="authMsg"></div>
 
     <form id="authForm" autocomplete="on">
-      <div class="auth-field" id="authNameField" hidden>
-        <label for="authName">Nome</label>
-        <input type="text" id="authName" name="name" autocomplete="name" placeholder="Seu nome">
-      </div>
       <div class="auth-field">
         <label for="authEmail">E-mail</label>
         <input type="email" id="authEmail" name="email" autocomplete="email" placeholder="voce@exemplo.com" required>
       </div>
       <div class="auth-field">
         <label for="authPassword">Senha</label>
-        <input type="password" id="authPassword" name="password" autocomplete="current-password" placeholder="Mínimo 6 caracteres" required minlength="6">
+        <input type="password" id="authPassword" name="password" autocomplete="current-password" placeholder="Sua senha" required minlength="6">
       </div>
       <button type="submit" class="auth-submit" id="authSubmitBtn">Entrar</button>
     </form>
 
-    <div class="auth-switch">
-      <span id="authSwitchLabel">Ainda não tem conta?</span>
-      <button type="button" id="authSwitchBtn">Criar conta</button>
-    </div>
+    <p class="auth-switch" style="text-align:center; cursor:default;">Acesso exclusivo para alunos cadastrados. Se você ainda não recebeu seu e-mail e senha, fale com o professor.</p>
   </div>
 </div>
 
@@ -1718,19 +1711,13 @@
   }
 
   function setupAuthUI(){
-    var gate = document.getElementById("authGate");
     var form = document.getElementById("authForm");
     var msgEl = document.getElementById("authMsg");
-    var nameField = document.getElementById("authNameField");
-    var nameInput = document.getElementById("authName");
     var emailInput = document.getElementById("authEmail");
     var passInput = document.getElementById("authPassword");
     var submitBtn = document.getElementById("authSubmitBtn");
     var titleEl = document.getElementById("authTitle");
     var subEl = document.getElementById("authSub");
-    var switchLabel = document.getElementById("authSwitchLabel");
-    var switchBtn = document.getElementById("authSwitchBtn");
-    var mode = "login"; // "login" | "signup"
 
     if(!sb){
       titleEl.textContent = "Configuração pendente";
@@ -1749,33 +1736,10 @@
       msgEl.className = "auth-msg";
       msgEl.textContent = "";
     }
-    function setMode(next){
-      mode = next;
-      clearMsg();
-      if(mode === "signup"){
-        titleEl.textContent = "Criar conta";
-        subEl.textContent = "Crie sua conta para começar a registrar seu progresso.";
-        nameField.hidden = false;
-        nameInput.required = true;
-        passInput.setAttribute("autocomplete", "new-password");
-        submitBtn.textContent = "Criar conta";
-        switchLabel.textContent = "Já tem conta?";
-        switchBtn.textContent = "Entrar";
-      }else{
-        titleEl.textContent = "Entrar";
-        subEl.textContent = "Acesse sua conta para continuar sua trilha de estudos.";
-        nameField.hidden = true;
-        nameInput.required = false;
-        passInput.setAttribute("autocomplete", "current-password");
-        submitBtn.textContent = "Entrar";
-        switchLabel.textContent = "Ainda não tem conta?";
-        switchBtn.textContent = "Criar conta";
-      }
-    }
-    switchBtn.addEventListener("click", function(){
-      setMode(mode === "login" ? "signup" : "login");
-    });
 
+    // Não há cadastro pelo app: as contas são criadas pelo professor
+    // diretamente no painel do Supabase (Authentication → Users → Add user),
+    // e o e-mail/senha são repassados ao aluno por fora. Aqui só existe login.
     form.addEventListener("submit", function(ev){
       ev.preventDefault();
       clearMsg();
@@ -1784,37 +1748,17 @@
       if(!email || !pass){ return; }
       submitBtn.disabled = true;
 
-      var action;
-      if(mode === "signup"){
-        var name = nameInput.value.trim();
-        action = sb.auth.signUp({
-          email: email,
-          password: pass,
-          options: { data: { full_name: name || email } }
-        }).then(function(res){
-          if(res.error) throw res.error;
-          if(res.data && res.data.user && !res.data.session){
-            showMsg("Conta criada! Verifique seu e-mail para confirmar o cadastro e depois faça login.", "ok");
-            setMode("login");
-            return null;
-          }
-          return res.data && res.data.user;
-        });
-      }else{
-        action = sb.auth.signInWithPassword({ email: email, password: pass }).then(function(res){
-          if(res.error) throw res.error;
-          return res.data && res.data.user;
-        });
-      }
-
-      action.then(function(user){
+      sb.auth.signInWithPassword({ email: email, password: pass }).then(function(res){
+        if(res.error) throw res.error;
+        return res.data && res.data.user;
+      }).then(function(user){
         submitBtn.disabled = false;
         if(user) enterApp(user);
       }).catch(function(err){
         submitBtn.disabled = false;
-        var msg = (err && err.message) || "Não foi possível concluir. Tente novamente.";
-        if(/already registered|already exists/i.test(msg)) msg = "Este e-mail já tem uma conta. Tente entrar.";
+        var msg = (err && err.message) || "Não foi possível entrar. Tente novamente.";
         if(/invalid login credentials/i.test(msg)) msg = "E-mail ou senha incorretos.";
+        if(/email not confirmed/i.test(msg)) msg = "Este acesso ainda não foi confirmado. Fale com o professor.";
         showMsg(msg, "err");
       });
     });
