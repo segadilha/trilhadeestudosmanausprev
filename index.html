@@ -1079,8 +1079,6 @@
       </div>
       <button type="submit" class="auth-submit" id="authSubmitBtn">Entrar</button>
     </form>
-
-    <p class="auth-switch" style="text-align:center; cursor:default;">Acesso exclusivo para alunos cadastrados. Se você ainda não recebeu seu e-mail e senha, fale com o professor.</p>
   </div>
 </div>
 
@@ -1090,10 +1088,6 @@
       <span class="eyebrow">MANAUSPREV &middot; FCC</span>
       <div class="brand-row">
         <h1>Trilha de estudos</h1>
-        <button type="button" id="detailsToggleBtn" class="details-btn" aria-expanded="false" aria-controls="detailsPanel">
-          <span>Mais detalhes</span>
-          <svg class="chev" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="M6 3l5 5-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
       </div>
       <div class="sub">Analista &amp; Técnico Previdenciário &mdash; Administrativa</div>
     </div>
@@ -1101,83 +1095,6 @@
     <div class="account-bar" id="accountBar" hidden>
       <span class="account-name"><span class="lbl">Aluno(a)</span><span id="accountNameText">&nbsp;</span></span>
       <button type="button" id="logoutBtn">Sair</button>
-    </div>
-
-    <div class="rail-block details-panel" id="detailsPanel" hidden>
-      <span class="label">Painel estratégico</span>
-      <div class="card-grid">
-        <div class="info-card">
-          <span class="label">Órgão</span>
-          <div class="value">Manaus Previdência &mdash; MANAUSPREV</div>
-        </div>
-        <div class="info-card">
-          <span class="label">Banca examinadora</span>
-          <div class="value">Fundação Carlos Chagas (FCC)</div>
-        </div>
-        <div class="info-card">
-          <span class="label">Cargos</span>
-          <div class="value">Analista Previdenciário <small>Cód. 01 &middot; Administrativa &middot; Nível Superior</small></div>
-          <div class="value" style="margin-top:8px;">Técnico Previdenciário <small>Cód. 12 &middot; Administrativa &middot; Nível Médio/Técnico</small></div>
-        </div>
-        <div class="info-card">
-          <span class="label">Inscrições</span>
-          <div class="value mono">31/08/2026, 10h &rarr; 29/09/2026, 23h59<small>Horário de Brasília &middot; exclusivamente pela internet</small></div>
-        </div>
-        <div class="info-card">
-          <span class="label">Data da prova</span>
-          <div class="value mono">06/12/2026<small>Analista: manhã &middot; Técnico: tarde</small></div>
-        </div>
-        <div class="info-card">
-          <span class="label">Duração / formato</span>
-          <div class="value mono">3h30<small>60 questões objetivas, 5 alternativas</small></div>
-        </div>
-        <div class="info-card">
-          <span class="label">Vagas / remuneração</span>
-          <div class="value">Não informado <small>Dado ausente no texto do edital fornecido</small></div>
-        </div>
-      </div>
-
-      <div class="block-head">
-        <h2>Distribuição de questões e pesos</h2>
-        <span class="note">Idêntica para os dois cargos</span>
-      </div>
-      <div class="table-wrap">
-        <table class="dist">
-          <thead>
-            <tr><th>Bloco</th><th>Disciplinas</th><th>Questões</th><th>Peso</th><th>Peso no total</th></tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Conhecimentos Gerais</td>
-              <td>Língua Portuguesa, Raciocínio Lógico-Matemático, Noções de Informática</td>
-              <td class="num">20</td>
-              <td class="num">1</td>
-              <td class="num">20</td>
-            </tr>
-            <tr>
-              <td>Conhecimentos Específicos</td>
-              <td>Direito Constitucional, Administrativo, Civil e Previdenciário</td>
-              <td class="num">40</td>
-              <td class="num">3</td>
-              <td class="num">120</td>
-            </tr>
-            <tr>
-              <td>Total</td>
-              <td>&mdash;</td>
-              <td class="num">60</td>
-              <td class="num">&mdash;</td>
-              <td class="num">140</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="criteria">
-        <div class="criteria-item"><span class="mark">00&ndash;100</span><p>Escala de nota por prova. A nota final é a <strong>média aritmética ponderada</strong> das notas obtidas.</p></div>
-        <div class="criteria-item"><span class="mark">&ge;50%</span><p>Mínimo de acerto exigido, <strong>simultaneamente</strong>, em Conhecimentos Gerais e em Conhecimentos Específicos.</p></div>
-        <div class="criteria-item"><span class="mark">&ge;60,00</span><p>Média ponderada final mínima exigida por <strong>cargo/especialidade</strong> para não ser eliminado.</p></div>
-        <div class="criteria-item"><span class="mark">&#9888;</span><p>Quem não atingir os índices mínimos acima é <strong>excluído do concurso</strong>.</p></div>
-      </div>
     </div>
 
     <div class="rail-block">
@@ -1246,9 +1163,6 @@
       <div id="disciplinas"></div>
     </section>
 
-    <footer>
-      Trilha de estudos gerada a partir do documento oficial fornecido (MANAUSPREV &middot; FCC). Marcações salvas automaticamente neste navegador.
-    </footer>
   </main>
 </div>
 
@@ -1723,7 +1637,6 @@
       titleEl.textContent = "Configuração pendente";
       subEl.textContent = "Este app ainda não foi conectado a um projeto Supabase. Veja o arquivo LEIA-ME-CONFIGURACAO.md para concluir a configuração do login.";
       form.hidden = true;
-      document.querySelector(".auth-switch").hidden = true;
       showAuthGate();
       return;
     }
@@ -3979,15 +3892,6 @@
     });
   });
   document.body.classList.add("filter-ambos");
-
-  // ---- Detalhes (painel estratégico) ----------------------------------
-  var detailsBtn = document.getElementById("detailsToggleBtn");
-  var detailsPanel = document.getElementById("detailsPanel");
-  detailsBtn.addEventListener("click", function(){
-    var open = detailsPanel.hasAttribute("hidden");
-    if(open){ detailsPanel.removeAttribute("hidden"); } else { detailsPanel.setAttribute("hidden",""); }
-    detailsBtn.setAttribute("aria-expanded", open ? "true" : "false");
-  });
 
   // ---- Reset ---------------------------------------------------------
   // Usa uma janela de confirmação própria (em vez de confirm() nativo do
