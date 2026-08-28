@@ -1496,12 +1496,21 @@
   };
 
   // ---- Storage ------------------------------------------------------
+  // Cada item marcado (state[id][k]) guarda também, em state[id]._ts[k], o
+  // instante (Date.now()) em que foi alterado pela última vez. Isso permite
+  // mesclar o progresso item a item (em vez de substituir tudo de uma vez)
+  // quando o mesmo aluno usa duas abas ou dois aparelhos ao mesmo tempo —
+  // ver mergeStateInto() logo abaixo.
   var STORE_KEY = "manausprev-edital-checklist-v1";
   var state = {};
   try{
     state = JSON.parse(localStorage.getItem(STORE_KEY) || "{}");
   }catch(e){ state = {}; }
 
+  function touchTs(id, k){
+    if(!state[id]._ts) state[id]._ts = {};
+    state[id]._ts[k] = Date.now();
+  }
   function saveState(){
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
     scheduleCloudSync();
@@ -1510,16 +1519,67 @@
   function setCell(id, k, v){
     if(!state[id]) state[id] = {};
     state[id][k] = v;
+    touchTs(id, k);
     saveState();
   }
   function getRaw(id, k){ return state[id] ? state[id][k] : undefined; }
   function setRaw(id, k, v){
     if(!state[id]) state[id] = {};
     state[id][k] = v;
+    touchTs(id, k);
     saveState();
   }
   function clearRaw(id, k){
-    if(state[id]) { delete state[id][k]; saveState(); }
+    // Não apaga a chave (isso impediria comparar "quando" foi limpa contra
+    // uma marcação mais recente vinda de outro aparelho); grava null com
+    // carimbo de tempo, que o resto do código já trata como "ausente".
+    if(state[id]){ state[id][k] = null; touchTs(id, k); saveState(); }
+  }
+
+  // Combina duas cópias do progresso (a local e uma vinda de fora — nuvem,
+  // outra aba ou um evento em tempo real) escolhendo, ITEM A ITEM, a versão
+  // com o carimbo de tempo mais recente — em vez de uma cópia inteira
+  // sobrescrever a outra. Assim, marcar algo em um aparelho não apaga o que
+  // foi marcado quase ao mesmo tempo em outro. `changed` avisa se a versão
+  // combinada trouxe algo que a cópia local ainda não tinha (para só
+  // atualizar a tela quando realmente há novidade vinda de fora).
+  function mergeStateInto(localState, incomingState){
+    var merged = {}, changed = false;
+    var ids = {};
+    Object.keys(localState || {}).forEach(function(id){ ids[id] = 1; });
+    Object.keys(incomingState || {}).forEach(function(id){ ids[id] = 1; });
+    Object.keys(ids).forEach(function(id){
+      var a = (localState && localState[id]) || {};
+      var b = (incomingState && incomingState[id]) || {};
+      var aTs = a._ts || {}, bTs = b._ts || {};
+      var keys = {};
+      Object.keys(a).forEach(function(k){ if(k !== "_ts") keys[k] = 1; });
+      Object.keys(b).forEach(function(k){ if(k !== "_ts") keys[k] = 1; });
+      var out = {}, outTs = {};
+      Object.keys(keys).forEach(function(k){
+        var hasA = Object.prototype.hasOwnProperty.call(a, k);
+        var hasB = Object.prototype.hasOwnProperty.call(b, k);
+        var at = aTs[k], bt = bTs[k];
+        var useB;
+        if(hasA && hasB){
+          if(at == null && bt == null) useB = false;
+          else if(at == null) useB = true;
+          else if(bt == null) useB = false;
+          else useB = bt > at;
+        } else {
+          useB = hasB && !hasA;
+        }
+        if(useB){
+          out[k] = b[k]; outTs[k] = bt;
+          if(!hasA || a[k] !== b[k]) changed = true;
+        } else if(hasA || hasB){
+          out[k] = a[k]; outTs[k] = at;
+        }
+      });
+      out._ts = outTs;
+      merged[id] = out;
+    });
+    return { merged: merged, changed: changed };
   }
 
   // ---- Autenticação e sincronização em nuvem (Supabase) ------------------
@@ -1527,7 +1587,9 @@
   // (teoria, lei seca, questões) é sempre o mesmo para todos; o que muda por
   // conta é este objeto `state` (checkboxes, respostas de questões, etc.),
   // que é salvo localmente (rápido, funciona offline) e sincronizado em
-  // segundo plano com a tabela `progress` no Supabase.
+  // segundo plano com a tabela `progress` no Supabase — com mesclagem item a
+  // item (mergeStateInto) e, quando o navegador permite, atualização quase
+  // instantânea entre abas/aparelhos via Supabase Realtime.
   var sb = null;
   try{
     if(window.supabase && window.SUPABASE_URL && window.SUPABASE_ANON_KEY &&
@@ -1541,6 +1603,7 @@
   var cloudSyncTimer = null;
   var cloudSyncInFlight = false;
   var cloudSyncPending = false;
+  var realtimeChannel = null;
 
   function scheduleCloudSync(){
     if(!sb || !currentUser) return;
@@ -1548,12 +1611,23 @@
     cloudSyncTimer = setTimeout(flushCloudSync, 850);
   }
 
+  // Antes de gravar, busca a versão mais recente da nuvem e mescla item a
+  // item com o que está sendo salvo agora — para não apagar, por acidente,
+  // uma marcação feita quase ao mesmo tempo em outro aparelho/aba.
   function flushCloudSync(){
     if(!sb || !currentUser) return;
     if(cloudSyncInFlight){ cloudSyncPending = true; return; }
     cloudSyncInFlight = true;
-    sb.from("progress")
-      .upsert({ user_id: currentUser.id, data: state, updated_at: new Date().toISOString() })
+    var userId = currentUser.id;
+    sb.from("progress").select("data").eq("user_id", userId).maybeSingle()
+      .then(function(res){
+        var cloudData = (res && res.data && res.data.data && typeof res.data.data === "object") ? res.data.data : null;
+        var result = mergeStateInto(state, cloudData);
+        state = result.merged;
+        try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+        if(result.changed) reRenderAfterStateSwap();
+        return sb.from("progress").upsert({ user_id: userId, data: state, updated_at: new Date().toISOString() });
+      })
       .then(function(){
         cloudSyncInFlight = false;
         if(cloudSyncPending){ cloudSyncPending = false; flushCloudSync(); }
@@ -1564,6 +1638,25 @@
   window.addEventListener("beforeunload", flushCloudSync);
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState === "hidden") flushCloudSync();
+  });
+
+  // Mesmo aparelho, duas abas abertas: quando uma aba salva no localStorage,
+  // as OUTRAS abas (nunca a que escreveu) recebem este evento nativo do
+  // navegador. Em vez de simplesmente copiar o valor novo, mescla item a
+  // item com o que esta aba já tinha — evita que uma aba "atrasada" apague
+  // uma marcação feita na outra.
+  window.addEventListener("storage", function(e){
+    if(!currentUser || e.key !== STORE_KEY || e.newValue == null) return;
+    var incoming;
+    try{ incoming = JSON.parse(e.newValue); }catch(err){ return; }
+    var result = mergeStateInto(state, incoming);
+    var mergedJson = JSON.stringify(result.merged);
+    state = result.merged;
+    if(mergedJson !== e.newValue){
+      try{ localStorage.setItem(STORE_KEY, mergedJson); }catch(err){}
+    }
+    if(result.changed) reRenderAfterStateSwap();
+    scheduleCloudSync();
   });
 
   function loadLocalStateFor(userId){
@@ -1579,18 +1672,52 @@
     refreshQueues();
   }
 
-  // Busca o progresso salvo na nuvem e o mescla por cima da cópia local
-  // (a nuvem é a fonte de verdade quando o aluno troca de aparelho).
+  // Busca o progresso salvo na nuvem e mescla item a item com o que já está
+  // carregado localmente (em vez de a nuvem simplesmente substituir tudo) —
+  // cobre o caso de o aluno já ter marcado algo nesta aba no instante entre
+  // abrir a página e a resposta da nuvem chegar.
   function pullCloudState(userId){
     if(!sb) return Promise.resolve();
     return sb.from("progress").select("data").eq("user_id", userId).maybeSingle()
       .then(function(res){
         if(res && res.data && res.data.data && typeof res.data.data === "object"){
-          state = res.data.data;
+          var result = mergeStateInto(state, res.data.data);
+          state = result.merged;
           try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
         }
       })
       .catch(function(){ /* offline ou tabela ainda não criada: segue com o estado local */ });
+  }
+
+  // Sincronização em tempo real entre abas/aparelhos diferentes (Supabase
+  // Realtime). Exige que a replicação esteja habilitada para a tabela
+  // `progress` no painel do Supabase — ver LEIA-ME-CONFIGURACAO.md. Se não
+  // estiver habilitada, o evento simplesmente nunca chega e o app continua
+  // funcionando normalmente com a sincronização por salvamento (acima).
+  function setupRealtime(userId){
+    if(!sb) return;
+    teardownRealtime();
+    try{
+      realtimeChannel = sb.channel("progress-" + userId)
+        .on("postgres_changes", {
+          event: "*", schema: "public", table: "progress", filter: "user_id=eq." + userId
+        }, function(payload){
+          var row = payload && payload.new;
+          if(!row || !row.data || typeof row.data !== "object") return;
+          var result = mergeStateInto(state, row.data);
+          state = result.merged;
+          try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+          if(result.changed) reRenderAfterStateSwap();
+        })
+        .subscribe();
+    }catch(e){ realtimeChannel = null; }
+  }
+
+  function teardownRealtime(){
+    if(sb && realtimeChannel){
+      try{ sb.removeChannel(realtimeChannel); }catch(e){}
+    }
+    realtimeChannel = null;
   }
 
   function showAuthGate(){
@@ -1614,10 +1741,12 @@
     loadLocalStateFor(user.id);
     reRenderAfterStateSwap();
     hideAuthGate();
+    setupRealtime(user.id);
     pullCloudState(user.id).then(reRenderAfterStateSwap);
   }
 
   function leaveApp(){
+    teardownRealtime();
     currentUser = null;
     state = {};
     STORE_KEY = "manausprev-edital-checklist-v1";
