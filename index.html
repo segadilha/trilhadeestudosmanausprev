@@ -566,7 +566,9 @@
   }
   .quiz-statement{ font-size:14.5px; line-height:1.65; color:var(--ink); margin-bottom:16px; }
   .quiz-options{ display:flex; flex-direction:column; gap:8px; }
+  .quiz-option-row{ display:flex; align-items:stretch; gap:8px; }
   .quiz-option{
+    flex:1 1 auto;
     display:flex;
     align-items:flex-start;
     gap:10px;
@@ -580,6 +582,7 @@
     border-radius:9px;
     padding:10px 13px;
     cursor:pointer;
+    min-width:0;
   }
   .quiz-option:hover:not(.answered *):not(:disabled){ border-color:var(--accent); background:var(--accent-soft); }
   .quiz-option:disabled{ cursor:default; }
@@ -598,6 +601,32 @@
   .quiz-option.correct .letter{ border-color:var(--good); background:var(--good); color:#FFFFFF; }
   .quiz-option.wrong{ border-color:var(--bad); background:var(--bad-soft); }
   .quiz-option.wrong .letter{ border-color:var(--bad); background:var(--bad); color:#FFFFFF; }
+  /* Alternativa "eliminada" pelo aluno (descartada por exclusão, ainda sem
+     resposta dada): fica ilegível para clique e com o texto riscado, mas
+     continua totalmente legível visualmente — é só um lembrete de descarte. */
+  .quiz-option.eliminated{
+    opacity:.55;
+    cursor:not-allowed;
+    background:var(--surface);
+  }
+  .quiz-option.eliminated span:not(.letter){ text-decoration:line-through; text-decoration-color:var(--bad); text-decoration-thickness:1.5px; }
+  .quiz-option.eliminated .letter{ border-color:var(--line); color:var(--ink-faint); }
+  .quiz-eliminate-btn{
+    flex-shrink:0;
+    width:32px;
+    align-self:stretch;
+    display:grid;
+    place-content:center;
+    font-size:12px;
+    color:var(--ink-faint);
+    background:var(--surface);
+    border:1.5px solid var(--line-strong);
+    border-radius:9px;
+    cursor:pointer;
+  }
+  .quiz-eliminate-btn:hover{ border-color:var(--bad); color:var(--bad); background:var(--bad-soft); }
+  .quiz-eliminate-btn.active{ border-color:var(--bad); color:#FFFFFF; background:var(--bad); }
+  .quiz-eliminate-btn.active:hover{ background:var(--bad); }
   .quiz-comment{
     display:flex;
     gap:9px;
@@ -4500,6 +4529,7 @@
   var quizNavIndex = { questoesConcurso:0, questoesRevisao:0 };
   var quizOrderCache = {}; // { [tab]: { order:[origIdx,...], priorStatus:{origIdx:'correct'|'wrong'|null} } } — computed once per topic visit
   var quizSession = { questoesConcurso:{}, questoesRevisao:{} }; // { [tab]: {origIdx: selectedOptionIndex} } — answers given during THIS visit only, never persisted
+  var quizEliminated = { questoesConcurso:{}, questoesRevisao:{} }; // { [tab]: {origIdx: {optIndex:true}} } — alternativas "riscadas" pelo aluno como forma de descarte, só durante esta visita, nunca persistida
 
   function findAssunto(id){
     for(var i=0;i<assuntoRegistry.length;i++){ if(assuntoRegistry[i].id === id) return assuntoRegistry[i]; }
@@ -4562,16 +4592,33 @@
     var doneTotal = correctCount + wrongCount;
     var pct = doneTotal ? Math.round((correctCount/doneTotal)*100) : 0;
 
+    var eliminatedFor = quizEliminated[tab] || (quizEliminated[tab] = {});
+    var eliminated = eliminatedFor[qIdx] || (eliminatedFor[qIdx] = {});
+
     var letters = ["A","B","C","D","E","F"];
     var optionsHtml = q.options.map(function(opt, i){
+      var isElim = !answered && !!eliminated[i];
       var cls = "quiz-option";
       if(answered){
         if(i === q.correct) cls += " correct";
         else if(i === Number(selected)) cls += " wrong";
+      } else if(isElim){
+        cls += " eliminated";
       }
-      return '<button type="button" class="'+cls+'" data-i="'+i+'"'+(answered ? ' disabled' : '')+'>' +
+      var optionBtn = '<button type="button" class="'+cls+'" data-i="'+i+'"'+((answered || isElim) ? ' disabled' : '')+'>' +
         '<span class="letter">'+letters[i]+'</span><span>'+opt+'</span>' +
       '</button>';
+      // Botão para "riscar" a alternativa (eliminação por descarte) — fica
+      // fora do botão da alternativa (nunca dentro de um botão desabilitado),
+      // para continuar clicável mesmo depois de a alternativa ser eliminada,
+      // permitindo desfazer. Some da tela assim que a questão é respondida.
+      var eliminateBtn = answered ? "" :
+        '<button type="button" class="quiz-eliminate-btn'+(isElim ? " active" : "")+'" data-i="'+i+'" ' +
+        'title="'+(isElim ? "Desfazer eliminação" : "Eliminar esta alternativa")+'" ' +
+        'aria-pressed="'+isElim+'" aria-label="'+(isElim ? "Desfazer eliminação da alternativa "+letters[i] : "Eliminar alternativa "+letters[i])+'">' +
+        '<span aria-hidden="true">&#10005;</span>' +
+      '</button>';
+      return '<div class="quiz-option-row">'+optionBtn+eliminateBtn+'</div>';
     }).join("");
 
     var commentHtml = "";
@@ -4617,8 +4664,17 @@
       btn.addEventListener("click", function(){
         if(answered) return;
         var chosen = Number(btn.dataset.i);
+        if(eliminated[chosen]) return;
         session[qIdx] = chosen;
         setQuizAnswer(currentTopicId, tab, qIdx, chosen);
+        renderQuiz(questions, tab);
+      });
+    });
+    topicTabPanel.querySelectorAll(".quiz-eliminate-btn").forEach(function(btn){
+      btn.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var i = Number(btn.dataset.i);
+        if(eliminated[i]) delete eliminated[i]; else eliminated[i] = true;
         renderQuiz(questions, tab);
       });
     });
@@ -4659,6 +4715,7 @@
     quizNavIndex = { questoesConcurso:0, questoesRevisao:0 };
     quizOrderCache = {};
     quizSession = { questoesConcurso:{}, questoesRevisao:{} };
+    quizEliminated = { questoesConcurso:{}, questoesRevisao:{} };
     topicModalPath.textContent = assunto.discName;
     topicModalTitle.innerHTML = assunto.title;
     if(assunto.subs && assunto.subs.length){
