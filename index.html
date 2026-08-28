@@ -1638,6 +1638,14 @@
   window.addEventListener("beforeunload", flushCloudSync);
   document.addEventListener("visibilitychange", function(){
     if(document.visibilityState === "hidden") flushCloudSync();
+    else if(document.visibilityState === "visible" && currentUser) pullCloudState(currentUser.id);
+  });
+  // Cobre navegadores/PWAs em que "voltar para a aba" dispara "focus" mas
+  // não "visibilitychange" de forma confiável (comum ao trocar de app no
+  // celular). Reforça o mesmo gatilho: buscar e mesclar o progresso mais
+  // recente sempre que o aluno volta a olhar para o app.
+  window.addEventListener("focus", function(){
+    if(currentUser) pullCloudState(currentUser.id);
   });
 
   // Mesmo aparelho, duas abas abertas: quando uma aba salva no localStorage,
@@ -1675,7 +1683,11 @@
   // Busca o progresso salvo na nuvem e mescla item a item com o que já está
   // carregado localmente (em vez de a nuvem simplesmente substituir tudo) —
   // cobre o caso de o aluno já ter marcado algo nesta aba no instante entre
-  // abrir a página e a resposta da nuvem chegar.
+  // abrir a página e a resposta da nuvem chegar. Atualiza a tela sozinha
+  // quando a mesclagem traz algo novo (chamada tanto no login quanto pelo
+  // "polling" e pelos gatilhos de foco/visibilidade logo abaixo — por isso
+  // ela mesma decide se precisa re-renderizar, em vez de deixar por conta
+  // de quem chamou).
   function pullCloudState(userId){
     if(!sb) return Promise.resolve();
     return sb.from("progress").select("data").eq("user_id", userId).maybeSingle()
@@ -1684,9 +1696,24 @@
           var result = mergeStateInto(state, res.data.data);
           state = result.merged;
           try{ localStorage.setItem(STORE_KEY, JSON.stringify(state)); }catch(e){}
+          if(result.changed) reRenderAfterStateSwap();
         }
       })
       .catch(function(){ /* offline ou tabela ainda não criada: segue com o estado local */ });
+  }
+
+  // Reforço para quando o tempo real (Realtime) não está habilitado no
+  // projeto Supabase, ou a conexão dele cai por qualquer motivo: a cada
+  // ~25 segundos, com o app aberto e o aluno logado, busca e mescla o
+  // progresso da nuvem por conta própria. É uma consulta única e leve
+  // (uma linha), então não pesa mesmo com o app aberto por horas.
+  var cloudPollTimer = null;
+  function startCloudPolling(userId){
+    stopCloudPolling();
+    cloudPollTimer = setInterval(function(){ pullCloudState(userId); }, 25000);
+  }
+  function stopCloudPolling(){
+    if(cloudPollTimer){ clearInterval(cloudPollTimer); cloudPollTimer = null; }
   }
 
   // Sincronização em tempo real entre abas/aparelhos diferentes (Supabase
@@ -1742,11 +1769,13 @@
     reRenderAfterStateSwap();
     hideAuthGate();
     setupRealtime(user.id);
+    startCloudPolling(user.id);
     pullCloudState(user.id).then(reRenderAfterStateSwap);
   }
 
   function leaveApp(){
     teardownRealtime();
+    stopCloudPolling();
     currentUser = null;
     state = {};
     STORE_KEY = "manausprev-edital-checklist-v1";
